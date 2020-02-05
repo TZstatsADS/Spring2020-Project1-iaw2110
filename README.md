@@ -9,7 +9,7 @@ This is the first and only *individual* (as opposed to *team*) this semester.
 
 Term: Spring 2020
 
-+ Projec title: Sentiment Change and Difference in Different Genres of Commercial Music
++ Project title: Sentiment Change and Difference in Different Genres of Commercial Music
 + This project is conducted by Ivan Wolansky (iaw2110).
 
 + Project summary: Here I conducted a study on the differences in sentiment across genres of commercial music, along with looking at the changes in those sentiments over time. This project used some text mining, text cleaning, sentiment analysis, and data visualization. The results showed that there are some sentiment differences between genres, and that genres do have changes in sentiment depending on the year.
