@@ -1,0 +1,301 @@
+---
+title: "Sentiment Change and Difference in Different Genres of Commercial Music"
+author: "Ivan Wolansky"
+date: "2/5/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r include=FALSE}
+# load packages
+library("sentimentr")
+library("ggplot2")
+library("plyr")
+library("dplyr")
+library("stringr")
+library("tidyr")
+library("RColorBrewer")
+library("reshape")
+library("Rmisc")
+library("CGPfunctions")
+library("Hmisc")
+library("qdap")
+library("tm")
+```
+
+Have you ever wondered how certain genres of music have changed over time? Is it possible that some of these changes can be seen directly in the emotions of the lyrics? Let's find out!
+
+```{r include=FALSE}
+# load data that was processed by Text_Processing.Rmd
+load('../output/processed_lyrics.RData')
+```
+
+```{r include=FALSE}
+# look at how the data.frame is structured
+head(dt_lyrics)
+```
+
+First, I cleaned up the lyrics by removing certain aspects of them in order to make it easy for analysis.
+
+```{r include=FALSE}
+# function to clean the lyrics. Didn't want to use stemmed words because this only retains one copy of each word that appears
+
+lyrics_cleaning <- function(x) {
+  x <- bracketX(x)
+  x <- replace_abbreviation(x)
+  x <- replace_symbol(x)
+  x <- removePunctuation(x)
+  x <- removeWords(x, character(0))
+  x <- replace_number(x)
+  x <- stripWhitespace(x)
+  x <- str_trim(x, side = "both")
+  x <- tolower(x)      
+  return(x)
+}
+```
+
+I decided to look at the data closely and found that there were two songs that were written before 1900. As a result, I decided to remove those songs. I also realized that I should look to see the names of the genres of songs and found that "Not Available" and "Other" were genres. I removed these because I didn't think they would be useful. I also removed Folk and Indie because there were less than 2000 songs associated with each (514 and 1318 respectively), and I didn't think this was enough for a robust analysis.
+
+```{r}
+#removing all songs where the year is before 1900
+dt_lyrics <- dt_lyrics[dt_lyrics$year > 1900,]
+
+# looking at the number of songs associated with each genre
+for (i in 1:length(unique(dt_lyrics$genre))) {
+  print(paste(unique(dt_lyrics$genre)[i], ":", nrow(dt_lyrics[dt_lyrics$genre == unique(dt_lyrics$genre)[i],])))
+}
+
+# selecting the genres that contain more than 2000 songs and will therefore show more robust results
+genres_to_keep <- c("Hip-Hop", "Pop", "Metal", "Rock", "Country", "Jazz", "Electronic", "R&B")
+
+dt_lyrics <- dt_lyrics[dt_lyrics$genre %in% genres_to_keep, ]
+
+#reseting the row indices
+rownames(dt_lyrics) <- NULL
+```
+
+```{r include=FALSE, eval=FALSE}
+# using the function, lyrics_cleaning to clean the lyrics, and then assigning the results to a new column
+
+#### TAKES LONG TO LOAD; CAN LOAD THE DATA FROM load('../output/processed_data.RData')
+#dt_lyrics$cleaned_lyrics <- sapply(X = dt_lyrics$lyrics, FUN = lyrics_cleaning)
+```
+
+```{r include=FALSE, eval=FALSE}
+#### COMMENTED OUT BECAUSE IT WOULD SAVE OVER EXISTING DATA
+
+#makes new data.frame to be saved that's under the 100 MB for github and saves it
+#processed_data <- dt_lyrics[, !(names(dt_lyrics) %in% c("id", "lyrics", "stemmedwords"))]
+#save(processed_data, file="../output/processed_data.RData")
+```
+
+```{r include=FALSE}
+load('../output/processed_data.RData')
+```
+
+After this, I ran the actual sentiment analysis. This took a very long time.
+
+```{r include=FALSE}
+# creating a matrix to keep track of the sentiment of each song; initialized with all 0s
+all_emotions <- data.frame(matrix(0, nrow = nrow(processed_data), ncol = 8))
+
+# emotions to be used
+emotion_columns <- c("anticipation",
+                   "joy", 
+                   "surprise", 
+                   "trust", 
+                   "anger", 
+                   "disgust", 
+                   "fear", 
+                   "sadness")
+
+colnames(all_emotions) <- emotion_columns
+```
+
+```{r eval = FALSE, include=FALSE, warning=FALSE, message = FALSE}
+#### COMMENTED OUT BECAUSE IT TAKES VERY LONG TO RUN; HOWEVER YOU CAN LOAD THE DATA FROM "../output/lyric_sentiment.RData"
+
+# iterates through each song and creates a matrix of the sentiment for each song. Then, renames the columns to match the corresponding emotion, and retains only the emotions we are interested in. Finally, saves this result over the corresponding #row that corresponds with the song in the original data table
+# for(i in 1:nrow(processed_data)){
+#   emotions=matrix(emotion(processed_data$cleaned_lyrics[i])$emotion,
+#                     nrow=1,
+#                     byrow=T)
+#     colnames(emotions)=emotion(processed_data$cleaned_lyrics[i])$emotion_type
+#     emotions <- emotions[, emotion_columns]
+#     all_emotions[i, ] <- emotions
+# }
+```
+
+```{r include=FALSE}
+#### COMMENTED OUT BECAUSE IT WOULD SAVE OVER EXISTING DATA
+#save(all_emotions, file="../output/lyric_sentiment.RData")
+```
+
+After gathering sentiment for each song, I found that ~1000 songs had 0 sentiment, so I removed these songs since I felt that removing only 1000 songs would not increase the bias a lot.
+
+```{r include=FALSE}
+# load in the sentiment data
+load(file="../output/lyric_sentiment.RData")
+
+# create a data.frame that has the year and genre for each corresponding sentiment for each corresponding song
+year_genre_emotions_df <- cbind(processed_data[, c("song", "artist", "year", "genre")], all_emotions)
+
+# remove any songs that had 0 sentiment (only ~1000 so doubtful that it would add much bias)
+year_genre_emotions_df <- year_genre_emotions_df[apply(year_genre_emotions_df[c(3:10)],1,function(z) any(z!=0)),]
+
+# reset row indices
+rownames(year_genre_emotions_df) <- NULL
+
+# view data's structure
+head(year_genre_emotions_df)
+```
+
+Here's our first look at sentiment. This graph shows the sentiment score across all songs, regardless of genre. As we can see, music's main emotions seem to be joy, sadness, fear, anticipation, and trust.
+
+```{r}
+# finding the mean of each column to get the overall sentiment for all songs
+emotion_overall <- colMeans(all_emotions)
+
+# melting the data in order to make it possible to plot; this means we make the column names into the row indices and the corresponding values into the next column
+melted_emotion_overall <- melt(emotion_overall)
+
+# in these next two lines we append the column names in the same order, making a new column, and then delete the row indices. This is done to make it easier to access the columns we want in ggplot
+melted_emotion_overall <- cbind(emotion_columns, melted_emotion_overall)
+rownames(melted_emotion_overall) <- NULL
+
+# renaming column
+colnames(melted_emotion_overall) <- c("variable", "value")
+
+# barplot of the data
+ggplot(data=melted_emotion_overall, aes(x=melted_emotion_overall$variable, y=value)) +
+  geom_bar(stat="identity", color=brewer.pal(8, "Set1"), fill=brewer.pal(8, "Set1")) +
+  ggtitle("Sentiment Score Across All Songs") + 
+    ylab(NULL) + 
+    xlab(NULL)
+```
+
+Next, I wanted to see how sentiment may have changed over the years in all of music.
+
+```{r}
+# creating a data.frame that has the year for each song and the associated sentiment with each song
+year_emotions_agg <- year_genre_emotions_df[, !(names(year_genre_emotions_df) %in% c("song", "artist", "genre"))]
+
+# agreggating by year making a data.frame that has each year and the associated sentiment with that year
+year_emotions_agg <- aggregate(.~year, year_emotions_agg, mean)
+
+# melting the data.frame so that the emotions columns become a column themselves with their associated values next to them, making it easier to plot in ggplot
+melted_year_emotions_agg <- melt(year_emotions_agg, id.vars="year")
+
+# colors to be used for the lines to make it easy to distinguish between them
+col.used <- c('#e6194B', '#3cb44b', '#ffe119', '#4363d8', '#f58231', '#911eb4', '#46f0f0', '#000000')
+
+# plotting the melted data.frame
+ggplot(melted_year_emotions_agg, 
+        mapping = aes_string(x="year",y="value",color="variable", group="variable")) + 
+        geom_line() + 
+        ggtitle("Sentiment Across All Music by Year") +
+          ylab(NULL) +
+          ylim(0, 0.06) +
+          scale_color_manual(values = col.used)
+```
+
+We see that generally there is a decent amount of variation in emotion across all genres of music by year. Interestingly, this graph indicates that a lot of the emotions seem to be correlated together. This makes sense because generally you would expect that positive emotions to move together, and negative emotions to also move together.
+
+Next, I wanted to look at the differentiation of emotion across genres.
+
+```{r}
+# this drops the column "year" and "song"
+genre_emotions_agg <- year_genre_emotions_df[, !(names(year_genre_emotions_df) %in% c("song", "artist", "year"))]
+
+# aggregating the data by genre by the mean. This means that we have the average sentiment score for each emotion for each individual genre
+genre_emotions_agg <- aggregate(.~genre, genre_emotions_agg, mean)
+
+# initializing an empty list
+bar_plots <- list()
+
+# iterates through each genre
+for (i in 1:nrow(genre_emotions_agg)) {
+  
+  # melts the emotions so that there's a column for emotion and column of values
+  melted_genre_emotions_agg <- melt(genre_emotions_agg[i, 2:9], id.vars=NULL)
+
+  # adds the ggplot barplot to a list
+  bar_plots[[i]] <- ggplot(data=melted_genre_emotions_agg, aes(x=variable, y=value)) +
+    geom_bar(stat="identity", color=brewer.pal(8, "Set1"), fill=brewer.pal(8, "Set1")) +
+    ggtitle(paste(genre_emotions_agg[i, 1], "Music")) + 
+    ylab(NULL) + 
+    xlab(NULL) + 
+    theme(axis.text.x = element_text(angle = 50, hjust = 1)) +
+    ylim(0, 0.07)
+}
+
+# displays the list of barplots in 2 rows of 4
+multiplot(plotlist=bar_plots, cols=4)
+```
+
+When we look at the sentiment scores across genres, we find that Hip-Hop and Rock are fairly even across sentiments. This makes sense because these genres tend to have the most variety in the general atmospheres of songs. We see here that if you want to brood and be angry, you should listen to some Metal because its sentiment tied up in anger, fear, and sadness. More importantly, if you're ever feeling down, you should probably listen to some Jazz or maybe R&B!
+
+```{r include=FALSE}
+# creates a data.frame where the data is aggregated by both year and genre by the mean
+year_genre_emotions_agg <- year_genre_emotions_df[, !(names(year_genre_emotions_df) %in% c("song", "artist"))]
+year_genre_emotions_agg <- aggregate(.~year+genre, year_genre_emotions_agg, mean)
+```
+
+```{r include=FALSE}
+# creating a copy of the genre_year_grouped data
+decade_buckets_grouped_agg <- year_genre_emotions_agg
+
+# apply function that applies a throw-away floor function; this means that we make every year fit the corresponding decade (1991 --> 1990s; 2009 --> 2000s, etc.)
+decade_buckets_grouped_agg$year <- sapply(year_genre_emotions_agg$year, function(x) return(x - x %% 10))
+
+# aggregates each decade so that they aren't separate floor years (like multiple 1970)
+decade_buckets_grouped_agg <-aggregate(.~year+genre, decade_buckets_grouped_agg, mean)
+
+# renames the column
+colnames(decade_buckets_grouped_agg)[1] <- "decade"
+
+# look at data's structure
+head(decade_buckets_grouped_agg)
+```
+
+Next, I wanted to look at the ways that certain emotions have manifested themselves differently by genre depending on the decade.
+
+```{r}
+# iterates through each emotion and creates a ggplot connceted scatterplot for each emotion by decade by genre
+for(i in 1:length(unique(decade_buckets_grouped_agg$genre))){
+  print(ggplot(decade_buckets_grouped_agg, 
+        mapping = aes_string(x="decade",y=colnames(decade_buckets_grouped_agg)[3:10][i],color="genre",group="genre")) + 
+        geom_line() + 
+        geom_point() + 
+        ggtitle(paste(capitalize(colnames(decade_buckets_grouped_agg)[3:10][i]), "Across Genres by Decade")) +
+          ylab(NULL) +
+          ylim(0, 0.12) +
+           scale_x_continuous(labels=c("1960s", "1970s", "1980s", "1990s", "2000s", "2010s")) +
+          scale_color_manual(values = col.used))
+}
+```
+
+We see in these graphs that generally there is a little fluctuation in sentiment across genres by decade. Notably, trust and joy nearly doubled in sentiment score from the 1980s to 1990s for Hip-Hop, which makes sense as the genre was changing a lot. Interestingly, in the 1980s the genre of electronic had a huge dip in joy. I think this is because a lot of goth rock music started mixing with electronic music in the 1980s.
+
+Finally, I wanted to take a really close look at the changes in emotion over time. Therefore, I looked at the ways that certain emotions have manifested themselves differently by genre depending on the year.
+
+```{r}
+# iterates through each emotion and creates a linegraph with each emotion by genre by year
+for(i in 1:length(colnames(year_genre_emotions_agg)[3:10])){
+  print(ggplot(year_genre_emotions_agg, 
+        mapping = aes_string(x="year",y=colnames(year_genre_emotions_agg)[3:10][i],color="genre",group="genre")) + 
+        geom_line() + 
+        ggtitle(paste(capitalize(colnames(year_genre_emotions_agg)[3:10][i]), "Across Genres by Year")) +
+          ylab(NULL) +
+          ylim(0, 0.175) + 
+          scale_color_manual(values = col.used))
+}
+```
+
+Here, we see high negative sentiment in Metal in 1985 and the 1990s. When I looked at the songs released in 1985 I saw that there were 10 songs released by a band called Bathory, who were genre defining for Black Metal. The 1990s were the peak for Black and Death Metal, which could explain the spikes. With Rock we see a low sentiment of joy from in the 1970s, and this decreases further in the early 1980s. I think that this can be attributed to anti-war sentiment leading into the recession in the 1980s, as a lot of anti-war songs were written by Rock artists, as were expressive songs about the recession.
+
+
+I think that generally, from this data we see that there are some distinct differences in sentiment between different genres. I also think that we can see some changes in sentiment across genres depending on the year. However, I think because of the smaller size of this data set (and the fact that all genres are not evenly represented), it is difficult to draw any meaningful conclusions. In the future I would like to do a similar analysis with a more complete dataset, and would also like to see how certain trends in sentiment may correlate with current events. 
